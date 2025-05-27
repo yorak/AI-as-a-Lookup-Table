@@ -87,18 +87,20 @@ def create_function(func_input: str) -> Callable:
             raise ValueError(f"Error creating function from Python code: {e}")
 
 
-def parse_range_spec(range_spec: str) -> Tuple[str, range]:
-    """Parse range specification like 'weight:50:155:5' -> ('weight', range(50, 155, 5))."""
+def parse_range_spec(range_spec: str) -> Tuple[str, range, str]:
+    """Parse range specification like 'weight:50:155:5:kg' -> ('weight', range(50, 155, 5), 'kg')."""
     parts = range_spec.split(':')
-    if len(parts) != 4:
-        raise ValueError(f"Range spec must have format 'name:start:stop:step', got: {range_spec}")
+    if len(parts) < 4 or len(parts) > 5:
+        raise ValueError(f"Range spec must have format 'name:start:stop:step[:unit]', got: {range_spec}")
     
     name = parts[0]
+    unit = parts[4] if len(parts) == 5 else ""
+    
     try:
         start = int(parts[1])
         stop = int(parts[2])
         step = int(parts[3])
-        return name, range(start, stop + step, step)  # +step to include stop value
+        return name, range(start, stop + step, step), unit  # +step to include stop value
     except ValueError as e:
         raise ValueError(f"Invalid numeric values in range spec '{range_spec}': {e}")
 
@@ -117,31 +119,35 @@ def load_notes(notes_input: str) -> str:
         return notes_input
 
 
-def generate_tables(output_dir: str, title: str, ranges_data: List[Tuple[str, range]], 
+def generate_tables(output_dir: str, title: str, ranges_data: List[Tuple[str, range, str]], 
                    func: Callable, notes: str):
     """Generate markdown tables for functions with 2-3 dimensions."""
     os.makedirs(output_dir, exist_ok=True)
     
     if len(ranges_data) == 2:
         # 2D case: single table
-        (row_name, row_range), (col_name, col_range) = ranges_data
+        (row_name, row_range, row_unit), (col_name, col_range, col_unit) = ranges_data
         filename = f"{output_dir}/{row_name}2{col_name}.md"
         
-        _write_table_file(filename, title, notes, row_name, row_range, 
-                         col_name, col_range, func, None, None)
+        _write_table_file(filename, title, notes, 
+                         row_name, row_range, row_unit,
+                         col_name, col_range, col_unit, 
+                         func, None, None, "")
         
         print(f"Generated table file: {filename}")
         
     elif len(ranges_data) == 3:
         # 3D case: multiple tables (one per first dimension value)
-        (first_name, first_range), (row_name, row_range), (col_name, col_range) = ranges_data
+        (first_name, first_range, first_unit), (row_name, row_range, row_unit), (col_name, col_range, col_unit) = ranges_data
         
         for first_val in first_range:
             filename = f"{output_dir}/{first_name}_{first_val:03d}.md"
-            table_title = f"{title}: {first_name} = {first_val}"
+            table_title = f"{title}: {first_name} = {first_val}{first_unit}"
             
-            _write_table_file(filename, table_title, notes, row_name, row_range,
-                             col_name, col_range, func, first_val, first_name)
+            _write_table_file(filename, table_title, notes,
+                             row_name, row_range, row_unit,
+                             col_name, col_range, col_unit,
+                             func, first_val, first_name, first_unit)
         
         print(f"Generated {len(first_range)} table files in '{output_dir}' directory")
     
@@ -149,9 +155,10 @@ def generate_tables(output_dir: str, title: str, ranges_data: List[Tuple[str, ra
         raise ValueError(f"Unsupported number of dimensions: {len(ranges_data)}")
 
 
-def _write_table_file(filename: str, title: str, notes: str, row_name: str, row_range: range,
-                     col_name: str, col_range: range, func: Callable, 
-                     first_val: Optional[int], first_name: Optional[str]):
+def _write_table_file(filename: str, title: str, notes: str, 
+                     row_name: str, row_range: range, row_unit: str,
+                     col_name: str, col_range: range, col_unit: str, 
+                     func: Callable, first_val: Optional[int], first_name: Optional[str], first_unit: str):
     """Write a single markdown table file."""
     with open(filename, 'w') as f:
         f.write(f"# {title}\n\n")
@@ -159,14 +166,19 @@ def _write_table_file(filename: str, title: str, notes: str, row_name: str, row_
         if notes:
             f.write(f"{notes}\n\n")
         
+        # Format names with units for display
+        row_display = f"{row_name}" + (f" ({row_unit})" if row_unit else "")
+        col_display = f"{col_name}" + (f" ({col_unit})" if col_unit else "")
+        
         # Create table header
-        f.write(f"| ↓{row_name[0]}, {col_name[0]}→ |")
+        corner_label = f"↓{row_name[0]}, {col_name[0]}→"
+        f.write(f"| {corner_label} |")
         for col_val in col_range:
             f.write(f" {col_val} |")
         f.write("\n")
         
         # Create separator row
-        f.write("|" + "-" * 20 + "|")
+        f.write("| " + "-" * len(corner_label) + " |")
         for _ in col_range:
             f.write(" --- |")
         f.write("\n")
@@ -180,14 +192,14 @@ def _write_table_file(filename: str, title: str, notes: str, row_name: str, row_
                     if first_val is not None:
                         # 3D case
                         args = [first_val, row_val, col_val]
-                        arg_str = f"{first_name}={first_val}, {row_name}={row_val}, {col_name}={col_val}"
+                        arg_str = f"{first_name}={first_val}{first_unit}, {row_name}={row_val}{row_unit}, {col_name}={col_val}{col_unit}"
                     else:
                         # 2D case
                         args = [row_val, col_val]
-                        arg_str = f"{row_name}={row_val}, {col_name}={col_val}"
+                        arg_str = f"{row_name}={row_val}{row_unit}, {col_name}={col_val}{col_unit}"
                     
                     result = func(args)
-                    f.write(f" {result} |")
+                    f.write(f" {round(result)} |")
                 except Exception as e:
                     f.write(f" ERROR |")
                     print(f"Warning: Error calculating function({arg_str}): {e}")
@@ -200,17 +212,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # 2D function
+  # 2D function with units
   python generic_table_generator.py \\
     --function "lambda args: args[0] * args[1]" \\
-    --ranges "x:1:10:1" "y:1:5:1" \\
-    --title "Multiplication Table" \\
-    --output-dir "multiply_tables"
+    --ranges "force:1:10:1:N" "distance:1:5:1:m" \\
+    --title "Work = Force × Distance" \\
+    --output-dir "work_tables"
 
   # 3D function from Dart file
   python generic_table_generator.py \\
     --function "model.dart" \\
-    --ranges "weight:50:150:5" "height:150:200:5" "age:20:80:10" \\
+    --ranges "weight:50:150:5:kg" "height:150:200:5:cm" "age:20:80:10:years" \\
     --title "BMI Prediction" \\
     --notes "notes.md" \\
     --output-dir "bmi_tables"
@@ -220,7 +232,7 @@ Examples:
                        help='Function definition (Python lambda/def) or Dart file path')
     
     parser.add_argument('--ranges', '-r', nargs='+', required=True,
-                       help='Input ranges in format "name:start:stop:step" (2-3 ranges)')
+                       help='Input ranges in format "name:start:stop:step[:unit]" (2-3 ranges)')
     
     parser.add_argument('--title', '-t', required=True,
                        help='Title for the generated tables')
@@ -244,8 +256,8 @@ Examples:
         # Parse ranges
         ranges_data = []
         for range_spec in args.ranges:
-            name, range_obj = parse_range_spec(range_spec)
-            ranges_data.append((name, range_obj))
+            name, range_obj, unit = parse_range_spec(range_spec)
+            ranges_data.append((name, range_obj, unit))
         
         # Load notes
         notes = load_notes(args.notes) if args.notes else ""

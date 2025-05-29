@@ -4,6 +4,11 @@ A Python tool for generating markdown lookup tables from AI/ML functions with 2-
 
 Also a script to convert the markdown to PDF is provided.
 
+<div style="text-align: center;">
+  <img src="example/example_modified.png" alt="Example PDF page" style="max-width: 100%; height: auto;" />
+  <p><strong>Example 2:</strong> Page from a PDF showing a table generated with this tool.</p>
+</div>
+
 ## Features
 
 - Generate markdown tables from any mathematical or ML function
